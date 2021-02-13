@@ -1,0 +1,14 @@
+[package]
+name = "polymest"
+version = "0.1.0"
+authors = ["Clayton Walker <cwalker@sofi.org>"]
+edition = "2018"
+
+[dependencies]
+wgpu = "0.7"
+winit = "0.24"
+#winit = { version = "0.24.0", features = ["web-sys"] }
+#wgpu = { git = "https://github.com/gfx-rs/wgpu-rs", version = "0.7.0", rev = "6864c0be84a7a9994486ac6704d390ffbd271641", features=[] }
+#js-sys = "0.3.46"
+wgpu-subscriber = "0.1"
+pollster = "0.2"
