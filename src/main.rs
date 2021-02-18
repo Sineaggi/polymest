@@ -4,7 +4,9 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::Window,
 };
-use wgpu::{ShaderStage, Extent3d};
+use crate::blit::Blit;
+
+pub mod blit;
 
 async fn run(event_loop: EventLoop<()>, window: Window) {
     let size = window.inner_size();
@@ -63,7 +65,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
 
     let storage_texture = device.create_texture(&wgpu::TextureDescriptor {
         label: None,
-        size: Extent3d {
+        size: wgpu::Extent3d {
             width: 1024,
             height: 1024,
             depth: 1
@@ -75,11 +77,14 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         usage: wgpu::TextureUsage::STORAGE | wgpu::TextureUsage::COPY_SRC
     });
 
+    let blit = Blit::new(&device, &storage_texture.create_view(&wgpu::TextureViewDescriptor::default()));
+    //blot.draw();
+
     let fractual_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
         entries: &[wgpu::BindGroupLayoutEntry {
             binding: 0,
-            visibility: ShaderStage::COMPUTE,
+            visibility: wgpu::ShaderStage::COMPUTE,
             ty: wgpu::BindingType::StorageTexture {
                 access: wgpu::StorageTextureAccess::WriteOnly,
                 format: wgpu::TextureFormat::Rgba8Unorm,
@@ -118,6 +123,43 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         module: &fractal_module,
         entry_point: "main"
     });
+
+    /*
+    let blit_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: None,
+        entries: &[]
+    });
+
+    let blit_shad = device.create_shader_module(&ShaderModuleDescriptor {
+        label: None,
+        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("blit.wgsl"))),
+        flags: wgpu::ShaderFlags::all(),
+    });
+
+    let blit_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: None,
+        bind_group_layouts: &[&blit_bind_group_layout],
+        push_constant_ranges: &[]
+    });
+
+    let blit_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: None,
+        layout: Some(&blit_layout),
+        vertex: wgpu::VertexState {
+            module: &blit_shad,
+            entry_point: "vs_main",
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &blit_shad,
+            entry_point: "fs_main",
+            targets: &[swapchain_format.into()],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+    });
+     */
 
     let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: None,
@@ -170,9 +212,9 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                     .expect("Failed to acquire next swap chain texture")
                     .output;
 
-                let mut fencoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
                 {
-                    let mut cpass = fencoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                         label: None
                     });
                     cpass.set_pipeline(&compute_pipeline);
@@ -180,8 +222,29 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                     cpass.dispatch(1024, 1024, 1);
                 }
 
-                let mut encoder =
-                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+                {
+                    // todo: instead of copyin the texture, need to blit it via a quad
+                    blit.draw(&mut encoder, &frame.view);
+                }
+
+                /*
+                encoder.copy_texture_to_texture(TextureCopyView {
+
+                },
+                                                TextureCopyView {
+                                                    texture: frame,
+                                                    mip_level: 0,
+                                                    origin: Default::default()
+                                                },
+                                                Extent3d {
+                    width: 256,
+                    height: 256,
+                    depth: 0
+                });
+                 */
+
+                //let mut encoder =
+                //    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
                 {
                     let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: None,
@@ -199,7 +262,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                     rpass.draw(0..3, 0..1);
                 }
 
-                queue.submit(vec!(fencoder.finish(), encoder.finish()));
+                queue.submit(vec!(encoder.finish()));
             }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -214,26 +277,9 @@ fn main() {
     polymest::kekso();
     let event_loop = EventLoop::new();
     let window = winit::window::Window::new(&event_loop).unwrap();
-    #[cfg(not(target_arch = "wasm32"))]
-        {
-            wgpu_subscriber::initialize_default_subscriber(None);
-            // Temporarily avoid srgb formats for the swapchain on the web
-            pollster::block_on(run(event_loop, window));
-        }
-    #[cfg(target_arch = "wasm32")]
-        {
-            std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-            console_log::init().expect("could not initialize logger");
-            use winit::platform::web::WindowExtWebSys;
-            // On wasm, append the canvas to the document body
-            web_sys::window()
-                .and_then(|win| win.document())
-                .and_then(|doc| doc.body())
-                .and_then(|body| {
-                    body.append_child(&web_sys::Element::from(window.canvas()))
-                        .ok()
-                })
-                .expect("couldn't append canvas to document body");
-            wasm_bindgen_futures::spawn_local(run(event_loop, window));
-        }
+    {
+        wgpu_subscriber::initialize_default_subscriber(None);
+        // Temporarily avoid srgb formats for the swapchain on the web
+        pollster::block_on(run(event_loop, window));
+    }
 }
