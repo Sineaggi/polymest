@@ -245,6 +245,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
 
                 //let mut encoder =
                 //    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+                // todo: remove this as this will clear over the previous work
                 {
                     let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: None,
@@ -276,7 +277,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
 fn main() {
     polymest::kekso();
     let event_loop = EventLoop::new();
-    let window = winit::window::Window::new(&event_loop).unwrap();
+    let window = Window::new(&event_loop).unwrap();
     {
         wgpu_subscriber::initialize_default_subscriber(None);
         // Temporarily avoid srgb formats for the swapchain on the web
